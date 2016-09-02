@@ -1,0 +1,7 @@
+[package]
+name = "dkb-to-ynab"
+version = "0.1.0"
+authors = ["Martin Thurau <martin.thurau@gmail.com>"]
+
+[dependencies]
+csv = "0.14.7"
