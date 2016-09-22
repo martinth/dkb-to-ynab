@@ -6,3 +6,4 @@ authors = ["Martin Thurau <martin.thurau@gmail.com>"]
 [dependencies]
 csv = "0.14.7"
 rustc-serialize = "0.3.19"
+clap = "2.13.0"

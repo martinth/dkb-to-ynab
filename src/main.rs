@@ -1,11 +1,15 @@
 extern crate csv;
 extern crate rustc_serialize;
+extern crate clap;
 
-use std::env;
+use clap::App;
 use csv::Reader;
+use csv::Writer;
 
 static DEBIT_MARKER: &'static str = "Kontonummer:";
 static CREDIT_MARKER: &'static str = "Kreditkarte:";
+static OUTPUT_HEADER: &'static [ &'static str ] = &["Date", "Payee", "Category", "Memo", "Outflow", "Inflow"];
+
 
 #[derive(RustcDecodable, Debug)]
 struct TypeHeader {
@@ -42,21 +46,40 @@ struct CreditRecord {
     original_betrag: String,
 }
 
-#[derive(Debug)]
+// See: http://classic.youneedabudget.com/support/article/csv-file-importing
+// Date,Payee,Category,Memo,Outflow,Inflow
+// 01/25/12,Sample Payee,,Sample Memo for an outflow,100.00,
+// 01/26/12,Sample Payee 2,,Sample memo for an inflow,,500.00
+#[derive(RustcEncodable, Debug)]
 struct OutputRecord {
-    betrag: String,
+    date: String,
+    payee: String,
+    category: String,
+    memo: String,
+    outflow: String,
+    inflow: String,
 }
 impl From<CreditRecord> for OutputRecord {
     fn from(r: CreditRecord) -> OutputRecord {
         OutputRecord {
-            betrag: r.betrag
+            date: r.wertstellung,
+            payee: String::new(),
+            category: String::new(),
+            memo: r.beschreibung,
+            outflow: r.betrag,
+            inflow: String::new(),
         }
     }
 }
 impl From<DebitRecord> for OutputRecord {
     fn from(r: DebitRecord) -> OutputRecord {
         OutputRecord {
-            betrag: r.betrag
+            date: r.wertstellung,
+            payee: r.auftraggeber,
+            category: String::new(),
+            memo: r.verwendungszweck,
+            outflow: r.betrag,
+            inflow: String::new(),
         }
     }
 }
@@ -65,6 +88,11 @@ impl From<DebitRecord> for OutputRecord {
 enum InputError {
     Csv(csv::Error),
     UnknownFileType,
+}
+
+#[derive(Debug)]
+enum OutputError {
+    Csv(csv::Error),
 }
 
 
@@ -86,21 +114,36 @@ fn read_input_csv(file_name: &str) -> Result<Vec<OutputRecord>, InputError> {
         }).collect())
     } else {
         Err(InputError::UnknownFileType)
+    }  
+}
+
+fn write_output_csv(data: Vec<OutputRecord>, file_name: &str) -> Result<(), OutputError> {
+    let mut writer = try!(Writer::from_file(file_name).map_err(OutputError::Csv));
+    writer.write(OUTPUT_HEADER.into_iter());
+
+    for record in data {
+        let result = writer.encode(record);
+        assert!(result.is_ok());
     }
-    
+    Ok(())
+    //println!("{:?}", wtr.as_string());
 }
 
 fn main() {
 
-    if let Some(input_file) = env::args().nth(1) {
-        match read_input_csv(&input_file) {
-            Ok(lines) => {
-                for line in lines {
-                    println!("{:?}", line);
-                }
-            },
-            Err(e) => println!("{:?}", e)
-        }
-       
+    let options = App::new("dkb_to_ynab")
+                          .version("0.1")
+                          .author("Martin Thurau <martin.thurau@gmail.com>")
+                          .about("Converts DKB CSV files to CSV that YNAB can understand")
+                          .args_from_usage(
+                              "<INPUT>              'Sets the input file'
+                              <OUTPUT>              'Sets the output file'")
+                          .get_matches();
+
+    match read_input_csv(options.value_of("INPUT").unwrap()) {
+        Ok(lines) => {
+            write_output_csv(lines, options.value_of("OUTPUT").unwrap());
+        },
+        Err(e) => println!("{:?}", e)
     }
 }
