@@ -7,3 +7,4 @@ authors = ["Martin Thurau <martin.thurau@gmail.com>"]
 csv = "0.14.7"
 rustc-serialize = "0.3.19"
 clap = "2.13.0"
+chrono = "0.2.25"

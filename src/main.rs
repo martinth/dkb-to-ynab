@@ -1,6 +1,7 @@
 extern crate csv;
 extern crate rustc_serialize;
 extern crate clap;
+extern crate chrono;
 
 use clap::App;
 use csv::Reader;
@@ -15,6 +16,49 @@ static OUTPUT_HEADER: &'static [ &'static str ] = &["Date", "Payee", "Category",
 struct TypeHeader {
     kind: String,
     description: String,
+}
+
+fn convert_dt_format(input: &str) -> String {
+    chrono::NaiveDate::parse_from_str(input, "%d.%m.%Y")
+                    .map(|dt| dt.format("%Y/%m/%d").to_string())
+                    .unwrap_or(String::new())
+}
+
+fn convert_number_format(input: &str) -> Result<f64, RecordError> {
+    input.chars()
+        .filter(|c| *c == '-' || c.is_digit(10))
+        .collect::<String>()
+        .parse::<i32>()
+        .map_err(RecordError::AmountFormat)
+        .map(|cents| (cents as f64) / 100.0)
+}
+
+struct OutAndInflow {
+    outflow: String,
+    inflow: String,
+}
+impl From<Option<f64>> for OutAndInflow {
+    /// Takes a signed number and converts it to the OutAndInflow struct. 
+    ///
+    /// If the option is empty, a struct with empty strings will be returned,
+    fn from(signed_amount: Option<f64>) -> OutAndInflow {
+        signed_amount.map_or(OutAndInflow { 
+            outflow: String::new(),
+            inflow: String::new()
+        }, |signed_amount| {
+            if signed_amount < 0.0 {
+                OutAndInflow {
+                    outflow: format!("{0:.2}", signed_amount * -1.0),
+                    inflow: String::new()
+                }
+            } else {
+                OutAndInflow {
+                    outflow: String::new(),
+                    inflow: format!("{0:.2}", signed_amount),
+                }
+            }
+        }) 
+    }
 }
 
 // "Buchungstag";"Wertstellung";"Buchungstext";"Auftraggeber / Beg�nstigter";"Verwendungszweck";"Kontonummer";"BLZ";"Betrag (EUR)";"Gl�ubiger-ID";"Mandatsreferenz";"Kundenreferenz";
@@ -61,25 +105,29 @@ struct OutputRecord {
 }
 impl From<CreditRecord> for OutputRecord {
     fn from(r: CreditRecord) -> OutputRecord {
+        let out_and_inflow = OutAndInflow::from(convert_number_format(&r.betrag).ok());
+
         OutputRecord {
-            date: r.wertstellung,
+            date: convert_dt_format(&r.wertstellung),
             payee: String::new(),
             category: String::new(),
             memo: r.beschreibung,
-            outflow: r.betrag,
-            inflow: String::new(),
+            outflow: out_and_inflow.outflow,
+            inflow: out_and_inflow.inflow,
         }
     }
 }
 impl From<DebitRecord> for OutputRecord {
     fn from(r: DebitRecord) -> OutputRecord {
+        let out_and_inflow = OutAndInflow::from(convert_number_format(&r.betrag).ok());
+
         OutputRecord {
-            date: r.wertstellung,
+            date: convert_dt_format(&r.wertstellung),
             payee: r.auftraggeber,
             category: String::new(),
             memo: r.verwendungszweck,
-            outflow: r.betrag,
-            inflow: String::new(),
+            outflow: out_and_inflow.outflow,
+            inflow: out_and_inflow.inflow,
         }
     }
 }
@@ -93,6 +141,11 @@ enum InputError {
 #[derive(Debug)]
 enum OutputError {
     Csv(csv::Error),
+}
+
+#[derive(Debug)]
+enum RecordError {
+    AmountFormat(std::num::ParseIntError)
 }
 
 
